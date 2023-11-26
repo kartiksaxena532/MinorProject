@@ -1,136 +1,179 @@
-"""
-Hand Tracking Module
-By: Murtaza Hassan
-Youtube: http://www.youtube.com/c/MurtazasWorkshopRoboticsandAI
-Website: https://www.computervision.zone
-"""
-
-import cv2
 import mediapipe as mp
-import time
-import math
+import cv2
 import numpy as np
+import time
 
-class handDetector():
-    def __init__(self, mode=False, maxHands=2, detectionCon=0.5, trackCon=0.5):
-        self.mode = mode
-        self.maxHands = maxHands
-        self.detectionCon = detectionCon
-        self.trackCon = trackCon
+#contants
+ml = 150
+max_x, max_y = 250+ml, 50
+curr_tool = "select tool"
+time_init = True
+rad = 40
+var_inits = False
+thick = 4
+prevx, prevy = 0,0
 
-        self.mpHands = mp.solutions.hands
-        self.hands = self.mpHands.Hands(self.mode, self.maxHands,
-        self.detectionCon, self.trackCon)
-        self.mpDraw = mp.solutions.drawing_utils
-        self.tipIds = [4, 8, 12, 16, 20]
+#get tools function
+def getTool(x):
+	if x < 50 + ml:
+		return "line"
 
-def findHands(self, img, draw=True):
-    imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    self.results = self.hands.process(imgRGB)
-    # print(results.multi_hand_landmarks)
+	elif x<100 + ml:
+		return "rectangle"
 
-    if self.results.multi_hand_landmarks:
-        for handLms in self.results.multi_hand_landmarks:
-            if draw:
-                self.mpDraw.draw_landmarks(img, handLms,
-                self.mpHands.HAND_CONNECTIONS)
+	elif x < 150 + ml:
+		return"draw"
 
-    return img
+	elif x<200 + ml:
+		return "circle"
 
-def findPosition(self, img, handNo=0, draw=True):
-    xList = []
-    yList = []
-    bbox = []
-    self.lmList = []
-    if self.results.multi_hand_landmarks:
-        myHand = self.results.multi_hand_landmarks[handNo]
-        for id, lm in enumerate(myHand.landmark):
-            # print(id, lm)
-            h, w, c = img.shape
-            cx, cy = int(lm.x * w), int(lm.y * h)
-            xList.append(cx)
-            yList.append(cy)
-            # print(id, cx, cy)
-            self.lmList.append([id, cx, cy])
-            if draw:
-                cv2.circle(img, (cx, cy), 5, (255, 0, 255), cv2.FILLED)
+	else:
+		return "erase"
 
-    xmin, xmax = min(xList), max(xList)
-    ymin, ymax = min(yList), max(yList)
-    bbox = xmin, ymin, xmax, ymax
+def index_raised(yi, y9):
+	if (y9 - yi) > 40:
+		return True
 
-    if draw:
-        cv2.rectangle(img, (xmin - 20, ymin - 20), (xmax + 20, ymax + 20),
-        (0, 255, 0), 2)
-
-    return self.lmList, bbox
-
-def fingersUp(self):
-    fingers = []
-    # Thumb
-    if self.lmList[self.tipIds[0]][1] > self.lmList[self.tipIds[0] - 1][1]:
-        fingers.append(1)
-    else:
-        fingers.append(0)
-
-    # Fingers
-    for id in range(1, 5):
-        if self.lmList[self.tipIds[id]][2] < self.lmList[self.tipIds[id] - 2][2]:
-            fingers.append(1)
-        else:
-            fingers.append(0)
-
-        # totalFingers = fingers.count(1)
-
-    return fingers
-
-def findDistance(self, p1, p2, img, draw=True,r=15, t=3):
-    x1, y1 = self.lmList[p1][1:]
-    x2, y2 = self.lmList[p2][1:]
-    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-
-    if draw:
-        cv2.line(img, (x1, y1), (x2, y2), (255, 0, 255), t)
-        cv2.circle(img, (x1, y1), r, (255, 0, 255), cv2.FILLED)
-        cv2.circle(img, (x2, y2), r, (255, 0, 255), cv2.FILLED)
-        cv2.circle(img, (cx, cy), r, (0, 0, 255), cv2.FILLED)
-        length = math.hypot(x2 - x1, y2 - y1)
-
-    return length, img, [x1, y1, x2, y2, cx, cy]
-
-def main():
-    pTime = 0
-    cTime = 0
-    cap = cv2.VideoCapture(1)
-    detector = handDetector()
-    while True:
-        success, img = cap.read()
-        img = detector.findHands(img)
-        lmList, bbox = detector.findPosition(img)
-        if len(lmList) != 0:
-            print(lmList[4])
-
-        cTime = time.time()
-        fps = 1 / (cTime - pTime)
-        pTime = cTime
-
-        cv2.putText(img, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_PLAIN, 3,
-        (255, 0, 255), 3)
-
-        cv2.imshow("Image", img)
-        cv2.waitKey(1)
-
-if __name__ == "__main__":
-    main()
+	return False
 
 
 
+hands = mp.solutions.hands
+hand_landmark = hands.Hands(min_detection_confidence=0.6, min_tracking_confidence=0.6, max_num_hands=1)
+draw = mp.solutions.drawing_utils
+
+
+# drawing tools
+tools = cv2.imread("tools.png")
+tools = tools.astype('uint8')
+
+mask = np.ones((480, 640))*255
+mask = mask.astype('uint8')
+'''
+tools = np.zeros((max_y+5, max_x+5, 3), dtype="uint8")
+cv2.rectangle(tools, (0,0), (max_x, max_y), (0,0,255), 2)
+cv2.line(tools, (50,0), (50,50), (0,0,255), 2)
+cv2.line(tools, (100,0), (100,50), (0,0,255), 2)
+cv2.line(tools, (150,0), (150,50), (0,0,255), 2)
+cv2.line(tools, (200,0), (200,50), (0,0,255), 2)
+'''
+
+cap = cv2.VideoCapture(0)
+while True:
+	_, frm = cap.read()
+	frm = cv2.flip(frm, 1)
+
+	rgb = cv2.cvtColor(frm, cv2.COLOR_BGR2RGB)
+
+	op = hand_landmark.process(rgb)
+
+	if op.multi_hand_landmarks:
+		for i in op.multi_hand_landmarks:
+			draw.draw_landmarks(frm, i, hands.HAND_CONNECTIONS)
+			x, y = int(i.landmark[8].x*640), int(i.landmark[8].y*480)
+
+			if x < max_x and y < max_y and x > ml:
+				if time_init:
+					ctime = time.time()
+					time_init = False
+				ptime = time.time()
+
+				cv2.circle(frm, (x, y), rad, (0,255,255), 2)
+				rad -= 1
+
+				if (ptime - ctime) > 0.8:
+					curr_tool = getTool(x)
+					print("your current tool set to : ", curr_tool)
+					time_init = True
+					rad = 40
+
+			else:
+				time_init = True
+				rad = 40
+
+			if curr_tool == "draw":
+				xi, yi = int(i.landmark[12].x*640), int(i.landmark[12].y*480)
+				y9  = int(i.landmark[9].y*480)
+
+				if index_raised(yi, y9):
+					cv2.line(mask, (prevx, prevy), (x, y), 0, thick)
+					prevx, prevy = x, y
+
+				else:
+					prevx = x
+					prevy = y
 
 
 
+			elif curr_tool == "line":
+				xi, yi = int(i.landmark[12].x*640), int(i.landmark[12].y*480)
+				y9  = int(i.landmark[9].y*480)
+
+				if index_raised(yi, y9):
+					if not(var_inits):
+						xii, yii = x, y
+						var_inits = True
+
+					cv2.line(frm, (xii, yii), (x, y), (50,152,255), thick)
+
+				else:
+					if var_inits:
+						cv2.line(mask, (xii, yii), (x, y), 0, thick)
+						var_inits = False
+
+			elif curr_tool == "rectangle":
+				xi, yi = int(i.landmark[12].x*640), int(i.landmark[12].y*480)
+				y9  = int(i.landmark[9].y*480)
+
+				if index_raised(yi, y9):
+					if not(var_inits):
+						xii, yii = x, y
+						var_inits = True
+
+					cv2.rectangle(frm, (xii, yii), (x, y), (0,255,255), thick)
+
+				else:
+					if var_inits:
+						cv2.rectangle(mask, (xii, yii), (x, y), 0, thick)
+						var_inits = False
+
+			elif curr_tool == "circle":
+				xi, yi = int(i.landmark[12].x*640), int(i.landmark[12].y*480)
+				y9  = int(i.landmark[9].y*480)
+
+				if index_raised(yi, y9):
+					if not(var_inits):
+						xii, yii = x, y
+						var_inits = True
+
+					cv2.circle(frm, (xii, yii), int(((xii-x)**2 + (yii-y)**2)**0.5), (255,255,0), thick)
+
+				else:
+					if var_inits:
+						cv2.circle(mask, (xii, yii), int(((xii-x)**2 + (yii-y)**2)**0.5), (0,255,0), thick)
+						var_inits = False
+
+			elif curr_tool == "erase":
+				xi, yi = int(i.landmark[12].x*640), int(i.landmark[12].y*480)
+				y9  = int(i.landmark[9].y*480)
+
+				if index_raised(yi, y9):
+					cv2.circle(frm, (x, y), 30, (0,0,0), -1)
+					cv2.circle(mask, (x, y), 30, 255, -1)
 
 
 
+	op = cv2.bitwise_and(frm, frm, mask=mask)
+	frm[:, :, 1] = op[:, :, 1]
+	frm[:, :, 2] = op[:, :, 2]
 
+	frm[:max_y, ml:max_x] = cv2.addWeighted(tools, 0.7, frm[:max_y, ml:max_x], 0.3, 0)
 
+	cv2.putText(frm, curr_tool, (270+ml,30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+	cv2.imshow("Air Canvas", frm)
 
+	if cv2.waitKey(1) & 0xFF == ord("q"):
+		cv2.destroyAllWindows()
+		cap.release()
+		break
+ 
